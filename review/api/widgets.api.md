@@ -754,6 +754,7 @@ export class MenuBar extends Widget {
     clearMenus(): void;
     get contentNode(): HTMLUListElement;
     dispose(): void;
+    protected _evtResize(event: Event): void;
     handleEvent(event: Event): void;
     insertMenu(index: number, menu: Menu): void;
     get menus(): ReadonlyArray<Menu>;
