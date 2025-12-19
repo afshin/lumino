@@ -65,9 +65,10 @@ describe('SocketStream', () => {
   describe('[Symbol.asyncIterator]', () => {
     it('should receive socket messages', async () => {
       stream = new TestSocketStream(null, () => new WebSocket(url));
-      server.on('connection', socket => {
+      server.on('connection', async socket => {
         socket.send('{ "alpha": 1 }');
         socket.send('{ "bravo": 2 }');
+        socket.close();
       });
       await sleep(250);
       expect(stream.messages).to.eql([{ alpha: 1 }, { bravo: 2 }]);

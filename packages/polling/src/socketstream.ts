@@ -22,13 +22,12 @@ export class SocketStream<T, U> extends Stream<T, U> implements IDisposable {
    *
    * @param sender - The sender which owns the stream.
    *
-   * @param connector - A factory that returns a new web socket connection.
+   * @param options - Socket stream instantiation options.
    */
-  constructor(
-    sender: T,
-    protected readonly connector: () => WebSocket
-  ) {
+  constructor(sender: T, options: SocketStream.IOptions) {
     super(sender);
+    this.connector = options.connector;
+    this.onmessage = options.onmessage?.(this) || null;
   }
 
   /**
@@ -74,6 +73,13 @@ export class SocketStream<T, U> extends Stream<T, U> implements IDisposable {
   protected readonly connection = new Poll({ factory: () => this.reconnect() });
 
   /**
+   * A factory that generates a new web socket connection.
+   */
+  protected readonly connector: () => WebSocket;
+
+  protected onmessage: typeof WebSocket.prototype.onmessage = null;
+
+  /**
    * The current active socket. This value is updated by the `reconnect` method.
    */
   protected socket: WebSocket | null = null;
@@ -90,7 +96,23 @@ export class SocketStream<T, U> extends Stream<T, U> implements IDisposable {
     return new Promise((_, reject) => {
       this.socket = this.connector();
       this.socket.onclose = () => reject(new Error('socket stream has closed'));
-      this.socket.onmessage = ({ data }) => data && this.emit(JSON.parse(data));
+      this.socket.onmessage = this.onmessage;
     });
+  }
+
+}
+
+export namespace SocketStream {
+  export interface IOptions {
+    /**
+     * A factory that returns a new web socket connection.
+     */
+    connector: () => WebSocket;
+
+    /**
+     * An optional factory that returns a web socket message handler.
+     */
+    onmessage?: (stream: SocketStream<unknown, unknown>) =>
+      typeof WebSocket.prototype.onmessage;
   }
 }
