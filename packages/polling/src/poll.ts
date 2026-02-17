@@ -142,9 +142,21 @@ export class Poll<T = any, U = any, V extends string = 'standby'>
    * Return an async iterator that yields every tick.
    */
   async *[Symbol.asyncIterator](): AsyncIterableIterator<IPoll.State<T, U, V>> {
-    while (!this.isDisposed) {
-      yield this.state;
-      await this.tick.catch(() => undefined);
+    const queue: IPoll.State<T, U, V>[] = [this.state];
+    const enqueue = (_: unknown, state: IPoll.State<T, U, V>) => {
+      queue.push(state);
+    };
+    this.ticked.connect(enqueue);
+    try {
+      while (!this.isDisposed) {
+        if (queue.length) {
+          yield queue.shift()!;
+        } else {
+          await this.tick.catch(() => undefined);
+        }
+      }
+    } finally {
+      this.ticked.disconnect(enqueue);
     }
   }
 

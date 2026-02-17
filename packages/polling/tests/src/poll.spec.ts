@@ -296,6 +296,90 @@ describe('Poll', () => {
       }
       expect(ticker.join(' ')).to.equal(expected);
     });
+
+    it('should not drop rapid schedule calls', async () => {
+      poll = new Poll<number>({
+        auto: false,
+        factory: () => Promise.resolve(0),
+        frequency: { interval: Poll.NEVER },
+        name: '@lumino/polling:Poll#[Symbol.asyncIterator]-4'
+      });
+      void poll.start();
+      await poll.tick;
+
+      const payloads = [1, 2, 3, 4, 5];
+      const collected: number[] = [];
+      const consumption = (async () => {
+        for await (const state of poll) {
+          if (
+            state.phase === 'resolved' &&
+            typeof state.payload === 'number' &&
+            state.payload > 0
+          ) {
+            collected.push(state.payload as number);
+          }
+          if (collected.length === payloads.length) {
+            break;
+          }
+        }
+      })();
+
+      // Rapidly schedule 5 payloads synchronously.
+      for (const payload of payloads) {
+        void poll.schedule({ payload, phase: 'resolved' });
+      }
+
+      await consumption;
+      expect(collected).to.deep.equal(payloads);
+    });
+
+    it('should stop yielding after disposal', async () => {
+      poll = new Poll({
+        auto: false,
+        factory: () => Promise.resolve(),
+        frequency: { interval: Poll.NEVER },
+        name: '@lumino/polling:Poll#[Symbol.asyncIterator]-5'
+      });
+      void poll.start();
+      await poll.tick;
+
+      // Schedule several ticks then dispose immediately.
+      void poll.schedule({ payload: 'a', phase: 'resolved' });
+      void poll.schedule({ payload: 'b', phase: 'resolved' });
+      void poll.schedule({ payload: 'c', phase: 'resolved' });
+      poll.dispose();
+
+      const collected: string[] = [];
+      for await (const state of poll) {
+        collected.push(state.phase);
+      }
+      // Iterator exits immediately — no states yielded from a disposed poll.
+      expect(collected).to.deep.equal([]);
+    });
+
+    it('should work identically for one-tick-at-a-time polling', async () => {
+      const total = 5;
+      let i = 0;
+      poll = new Poll({
+        auto: false,
+        factory: async () => ++i,
+        frequency: { interval: Poll.IMMEDIATE },
+        name: '@lumino/polling:Poll#[Symbol.asyncIterator]-6'
+      });
+      const ticker: IPoll.Phase<any>[] = [];
+      void poll.start();
+      for await (const state of poll) {
+        ticker.push(state.phase);
+        if (i >= total) {
+          poll.dispose();
+          break;
+        }
+      }
+      // Should see started, then resolved for each factory call.
+      expect(ticker[0]).to.equal('started');
+      expect(ticker.slice(1).every(p => p === 'resolved')).to.equal(true);
+      expect(ticker.length).to.be.greaterThan(1);
+    });
   });
 
   describe('#tick', () => {
