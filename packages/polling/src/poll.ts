@@ -144,6 +144,9 @@ export class Poll<T = any, U = any, V extends string = 'standby'>
   async *[Symbol.asyncIterator](): AsyncIterableIterator<IPoll.State<T, U, V>> {
     const queue: IPoll.State<T, U, V>[] = [this.state];
     const enqueue = (_: unknown, state: IPoll.State<T, U, V>) => {
+      if (queue.length >= Private.MAX_QUEUE_SIZE) {
+        queue.shift();
+      }
       queue.push(state);
     };
     this.ticked.connect(enqueue);
@@ -504,6 +507,11 @@ namespace Private {
     phase: 'disposed',
     timestamp: new Date(0).getTime()
   };
+
+  /**
+   * The maximum size of the poll state queue for each iterator returned.
+   */
+  export const MAX_QUEUE_SIZE = 1000;
 
   /**
    * Returns the number of milliseconds to sleep before the next tick.

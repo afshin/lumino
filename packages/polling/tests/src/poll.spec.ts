@@ -300,7 +300,7 @@ describe('Poll', () => {
     it('should not drop rapid schedule calls', async () => {
       poll = new Poll<number>({
         auto: false,
-        factory: () => Promise.resolve(0),
+        factory: () => Promise.resolve(-1),
         frequency: { interval: Poll.NEVER },
         name: '@lumino/polling:Poll#[Symbol.asyncIterator]-4'
       });
@@ -310,27 +310,53 @@ describe('Poll', () => {
       const payloads = [1, 2, 3, 4, 5];
       const collected: number[] = [];
       const consumption = (async () => {
-        for await (const state of poll) {
-          if (
-            state.phase === 'resolved' &&
-            typeof state.payload === 'number' &&
-            state.payload > 0
-          ) {
-            collected.push(state.payload as number);
-          }
-          if (collected.length === payloads.length) {
-            break;
-          }
+        for await (const state of poll!) {
+          if (state.payload === -1) continue;
+          collected.push(state.payload as number);
+          if (collected.length === payloads.length) break;
         }
       })();
 
-      // Rapidly schedule 5 payloads synchronously.
       for (const payload of payloads) {
         void poll.schedule({ payload, phase: 'resolved' });
       }
 
       await consumption;
       expect(collected).to.deep.equal(payloads);
+    });
+
+    it('should drop oldest states when buffer overflows', async () => {
+      poll = new Poll<number>({
+        auto: false,
+        factory: () => Promise.resolve(-1),
+        frequency: { interval: Poll.NEVER },
+        name: '@lumino/polling:Poll#[Symbol.asyncIterator]-7'
+      });
+      void poll.start();
+      await poll.tick;
+
+      const LIMIT = 1000;
+      const OVERFLOW = 10;
+
+      const collected: number[] = [];
+      const consumption = (async () => {
+        for await (const state of poll!) {
+          if (state.payload === -1) continue;
+          collected.push(state.payload as number);
+          if (collected.length === LIMIT) break;
+        }
+      })();
+
+      for (let i = 0; i < LIMIT + OVERFLOW; i++) {
+        void poll.schedule({ payload: i, phase: 'resolved' });
+      }
+
+      await consumption;
+
+      expect(collected.length).to.equal(LIMIT);
+      // Oldest items were dropped to stay within the buffer limit.
+      expect(collected[0]).to.equal(OVERFLOW);
+      expect(collected[LIMIT - 1]).to.equal(LIMIT + OVERFLOW - 1);
     });
 
     it('should stop yielding after disposal', async () => {
@@ -343,7 +369,6 @@ describe('Poll', () => {
       void poll.start();
       await poll.tick;
 
-      // Schedule several ticks then dispose immediately.
       void poll.schedule({ payload: 'a', phase: 'resolved' });
       void poll.schedule({ payload: 'b', phase: 'resolved' });
       void poll.schedule({ payload: 'c', phase: 'resolved' });
@@ -353,7 +378,6 @@ describe('Poll', () => {
       for await (const state of poll) {
         collected.push(state.phase);
       }
-      // Iterator exits immediately — no states yielded from a disposed poll.
       expect(collected).to.deep.equal([]);
     });
 
