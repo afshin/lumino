@@ -1,6 +1,8 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
+import { LinkedList } from '@lumino/collections';
+
 import { JSONExt, PromiseDelegate } from '@lumino/coreutils';
 
 import { IObservableDisposable } from '@lumino/disposable';
@@ -142,20 +144,21 @@ export class Poll<T = any, U = any, V extends string = 'standby'>
    * Return an async iterator that yields every tick.
    */
   async *[Symbol.asyncIterator](): AsyncIterableIterator<IPoll.State<T, U, V>> {
-    const queue: IPoll.State<T, U, V>[] = [this.state];
+    const queue = new LinkedList<IPoll.State<T, U, V>>();
     const enqueue = (_: unknown, state: IPoll.State<T, U, V>) => {
-      if (queue.length >= Private.MAX_QUEUE_SIZE) {
-        queue.shift();
+      if (queue.size >= Private.MAX_QUEUE_SIZE) {
+        queue.removeFirst();
       }
-      queue.push(state);
+      queue.addLast(state);
     };
+    queue.addLast(this.state);
     this.ticked.connect(enqueue);
     try {
       while (!this.isDisposed) {
-        if (queue.length) {
-          yield queue.shift()!;
-        } else {
+        if (queue.isEmpty) {
           await this.tick.catch(() => undefined);
+        } else {
+          yield queue.removeFirst()!;
         }
       }
     } finally {
